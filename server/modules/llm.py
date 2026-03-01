@@ -1,5 +1,5 @@
-from langchain.prompts import PromptTemplate
-from langchain.chains import RetrievalQA
+from langchain_core.prompts import PromptTemplate
+from langchain_core.output_parsers import StrOutputParser
 from langchain_groq import ChatGroq
 import os
 from dotenv import load_dotenv
@@ -7,6 +7,42 @@ from dotenv import load_dotenv
 load_dotenv()
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+
+class RetrievalChain:
+    """Wrapper class to maintain compatibility with RetrievalQA interface"""
+    def __init__(self, llm, prompt, retriever):
+        self.llm = llm
+        self.prompt = prompt
+        self.retriever = retriever
+        self.chain = (
+            {"context": self._format_retriever(), "question": lambda x: x.get("question") or x.get("query")}
+            | self.prompt
+            | self.llm
+            | StrOutputParser()
+        )
+    
+    def _format_retriever(self):
+        """Format retrieved documents as context string"""
+        def format_docs(x):
+            query_input = x.get("question") or x.get("query")
+            docs = self.retriever.get_relevant_documents(query_input)
+            return "\n\n".join(doc.page_content for doc in docs)
+        return format_docs
+    
+    def __call__(self, input_dict):
+        """Call the chain and return result with source documents"""
+        query_input = input_dict.get("question") or input_dict.get("query")
+        
+        # Get retrieved documents for source tracking
+        source_docs = self.retriever.get_relevant_documents(query_input)
+        
+        # Run the chain
+        response = self.chain.invoke(input_dict)
+        
+        return {
+            "result": response,
+            "source_documents": source_docs
+        }
 
 def get_llm_chain(retriever):
     llm = ChatGroq(
@@ -29,6 +65,7 @@ Your job is to provide clear, accurate, and helpful responses based **only on th
 🙋‍♂️ **User Question**:
 {question}
 
+
 ---
 
 💬 **Answer**:
@@ -40,10 +77,4 @@ Your job is to provide clear, accurate, and helpful responses based **only on th
 """
     )
 
-    return RetrievalQA.from_chain_type(
-        llm=llm,
-        chain_type="stuff",
-        retriever=retriever,
-        chain_type_kwargs={"prompt": prompt},
-        return_source_documents=True
-    )
+    return RetrievalChain(llm, prompt, retriever)

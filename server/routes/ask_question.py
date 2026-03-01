@@ -43,6 +43,9 @@ async def ask_question(question: str = Form(...)):
             def _get_relevant_documents(self, query: str) -> List[Document]:
                 return self._docs
 
+            def get_relevant_documents(self, query: str) -> List[Document]:
+                return self._get_relevant_documents(query)
+                
         retriever = SimpleRetriever(docs)
         chain = get_llm_chain(retriever)
         result = query_chain(chain, question)
